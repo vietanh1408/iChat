@@ -9,7 +9,10 @@ const Home: NextPage = () => {
 
   console.log("📢[index.tsx:7]: data: ", data);
 
-  const reloadSession = () => {};
+  const reloadSession = () => {
+    const event = new Event("visibilitychange");
+    document.dispatchEvent(event);
+  };
 
   return (
     <Box>
