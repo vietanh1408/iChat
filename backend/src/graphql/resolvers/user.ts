@@ -1,8 +1,87 @@
-import { CreateUsernameResponse, GraphQLContext } from "../../util/types";
+import {
+  CreateUsernameResponse,
+  GraphQLContext,
+  SearchUsersResponse,
+} from '@/utils/types';
+
+interface SearchUsersByKeywordArgs {
+  keyword: string;
+  selectedUsers: string[];
+}
 
 const resolvers = {
   Query: {
-    searchUsers: () => {},
+    searchUsers: async (
+      _: any,
+      args: { username: string },
+      context: GraphQLContext
+    ): Promise<SearchUsersResponse> => {
+      const { username } = args;
+
+      const { prisma, session } = context;
+
+      try {
+        const users = await prisma.user.findMany({
+          where: {
+            name: {
+              contains: username,
+              not: session?.user.name,
+              mode: 'insensitive',
+            },
+          },
+        });
+
+        return {
+          success: true,
+          users,
+        };
+      } catch (error) {
+        return {
+          success: false,
+        };
+      }
+    },
+
+    searchUsersByKeyword: async (
+      _: any,
+      args: SearchUsersByKeywordArgs,
+      context: GraphQLContext
+    ): Promise<SearchUsersResponse> => {
+      const { keyword, selectedUsers } = args;
+
+      const { prisma, session } = context;
+
+      if (!keyword) {
+        return {
+          success: true,
+          users: [],
+        };
+      }
+
+      try {
+        const users = await prisma.user.findMany({
+          where: {
+            name: {
+              contains: keyword,
+              not: session?.user.name,
+              mode: 'insensitive',
+            },
+            id: {
+              notIn: selectedUsers,
+            },
+          },
+        });
+
+        return {
+          success: true,
+          users,
+        };
+      } catch (error) {
+        return {
+          success: false,
+        };
+      }
+    },
   },
   Mutation: {
     createUsername: async (
@@ -13,37 +92,26 @@ const resolvers = {
       const { username } = args;
       const { prisma, session } = context;
 
-      if (!session?.user) {
-        return {
-          success: false,
-          error: "Authorization error",
-        };
-      }
-
-      const { id } = session.user;
-      console.log("📢[user.ts:24]: session: ", session.user);
-
       try {
         const existingUser = await prisma.user.findUnique({
           where: {
-            username,
+            id: session?.user.id,
           },
         });
 
-        console.log("📢[user.ts:33]: existingUser: ", existingUser);
-        if (existingUser) {
+        if (existingUser != null) {
           return {
             success: false,
-            error: "Username already taken. Try another",
+            error: 'Username already taken. Try another',
           };
         }
 
         await prisma.user.update({
           where: {
-            id,
+            id: session?.user.id,
           },
           data: {
-            username,
+            name: username,
           },
         });
 

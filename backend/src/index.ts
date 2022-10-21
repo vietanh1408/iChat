@@ -1,17 +1,23 @@
-import { PrismaClient } from "@prisma/client";
-import { getSession } from "next-auth/react";
+import { PrismaClient } from '@prisma/client';
+import { getSession } from 'next-auth/react';
 import {
   ApolloServerPluginDrainHttpServer,
   ApolloServerPluginLandingPageLocalDefault,
-} from "apollo-server-core";
-import { ApolloServer } from "apollo-server-express";
-import express from "express";
-import http from "http";
-import resolvers from "./graphql/resolvers";
-import typeDefs from "./graphql/typeDefs";
-import { makeExecutableSchema } from "@graphql-tools/schema";
-import * as dotenv from "dotenv";
-import { GraphQLContext, Session } from "./util/types";
+} from 'apollo-server-core';
+import { ApolloServer } from 'apollo-server-express';
+import express from 'express';
+import http from 'http';
+import resolvers from './graphql/resolvers';
+import typeDefs from './graphql/typeDefs';
+import { makeExecutableSchema } from '@graphql-tools/schema';
+import * as dotenv from 'dotenv';
+import { GraphQLContext, Session, SubscriptionContext } from './utils/types';
+import { GraphQLError } from 'graphql';
+
+import { WebSocketServer } from 'ws';
+import { useServer } from 'graphql-ws/lib/use/ws';
+
+import { PubSub } from 'graphql-subscriptions';
 
 async function main() {
   dotenv.config();
@@ -23,11 +29,33 @@ async function main() {
   const httpServer = http.createServer(app);
 
   const prisma = new PrismaClient();
+  const pubsub = new PubSub();
 
   const schema = makeExecutableSchema({
     typeDefs,
     resolvers,
   });
+
+  const wsServer = new WebSocketServer({
+    server: httpServer,
+    path: '/graphql/subscriptions',
+  });
+
+  const serverCleanup = useServer(
+    {
+      schema,
+      context: async (ctx: SubscriptionContext): Promise<GraphQLContext> => {
+        if (ctx?.connectionParams && ctx.connectionParams?.session) {
+          const { session } = ctx?.connectionParams;
+
+          return { session, prisma, pubsub };
+        }
+
+        return { session: null, prisma, pubsub };
+      },
+    },
+    wsServer
+  );
 
   const corsOptions = {
     origin: process.env.CLIENT_ORIGIN,
@@ -39,13 +67,34 @@ async function main() {
   const server = new ApolloServer({
     schema,
     csrfPrevention: true,
-    cache: "bounded",
-    context: async ({ req, res }): Promise<GraphQLContext> => {
+    cache: 'bounded',
+    context: async ({ req }): Promise<GraphQLContext> => {
       const session = (await getSession({ req })) as Session;
-      return { session, prisma };
+
+      if (!session?.user) {
+        // throwing a `GraphQLError` here allows us to specify an HTTP status code,
+        // standard `Error`s will have a 500 status code by default
+        throw new GraphQLError('User is not authenticated', {
+          extensions: {
+            code: 'UNAUTHENTICATED',
+            http: { status: 401 },
+          },
+        });
+      }
+
+      return { session, prisma, pubsub };
     },
     plugins: [
       ApolloServerPluginDrainHttpServer({ httpServer }),
+      {
+        async serverWillStart() {
+          return {
+            async drainServer() {
+              await serverCleanup.dispose();
+            },
+          };
+        },
+      },
       ApolloServerPluginLandingPageLocalDefault({ embed: true }),
     ],
   });
@@ -58,7 +107,7 @@ async function main() {
     // By default, apollo-server hosts its GraphQL endpoint at the
     // server root. However, *other* Apollo Server packages host it at
     // /graphql. Optionally provide this to match apollo-server.
-    path: "/",
+    path: '/',
   });
 
   // Modified server startup

@@ -1,13 +1,25 @@
-import { gql } from "apollo-server-core";
+import { gql } from 'apollo-server-core';
 
 const typeDefs = gql`
+  scalar Date
+
   type User {
     id: String
-    username: String
+    name: String
+    email: String
+    image: String
+    emailVerified: Date
+  }
+
+  type SearchUsers {
+    success: Boolean
+    error: String
+    users: [User]
   }
 
   type Query {
-    searchUsers(username: String): [User]
+    searchUsers(username: String): SearchUsers
+    searchUsersByKeyword(keyword: String, selectedUsers: [String]): SearchUsers
   }
 
   type Mutation {

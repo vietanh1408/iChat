@@ -4,6 +4,7 @@ import type { AppProps } from "next/app";
 import { theme } from "../chakra/theme";
 import { ApolloProvider } from "@apollo/client";
 import { client } from "../graphql/apollo-client";
+import "../styles/base.css";
 
 function MyApp({ Component, pageProps: { session, ...pageProps } }: AppProps) {
   return (
