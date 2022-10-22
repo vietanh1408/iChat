@@ -1,5 +1,5 @@
 import { GraphQLContext } from '@/utils/types';
-import { Conversation, prisma, Prisma } from '@prisma/client';
+import { Conversation, Prisma, User } from '@prisma/client';
 import { ApolloError } from 'apollo-server-core';
 
 interface ConversationArgs {
@@ -87,7 +87,7 @@ const resolvers = {
       });
 
       const generateDefaultNameConversation = () => {
-        const names = participants
+        const names = (participants as User[])
           .filter((participant) => participant.id !== session?.user.id)
           .map((participant) => participant.name);
         return names.join(', ');
